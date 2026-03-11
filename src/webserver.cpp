@@ -1,0 +1,199 @@
+#include "webserver.h"
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+
+webserver::webserver(int port, bool open_linger, size_t core_poolsize)
+        : port(port), open_linger(open_linger), is_close(false),
+            conn_event(EPOLLONESHOT | EPOLLRDHUP | EPOLLET),
+      pool(new threadpool(core_poolsize)), epollers(new epoller()) {
+    src_dir = getcwd(nullptr, 256);
+    assert(src_dir);
+
+    std::string cwd(src_dir);
+    std::string resource_path = cwd + "/resources/";
+    if (access(resource_path.c_str(), F_OK) != 0) {
+        std::string parent_resource_path = cwd + "/../resources/";
+        if (access(parent_resource_path.c_str(), F_OK) == 0) {
+            resource_path = parent_resource_path;
+        }
+    }
+
+    char* resolved_path = realpath(resource_path.c_str(), nullptr);
+    if (resolved_path) {
+        resource_path = resolved_path;
+        free(resolved_path);
+        if (resource_path.empty() || resource_path.back() != '/') {
+            resource_path.push_back('/');
+        }
+    }
+
+    free(src_dir);
+    src_dir = static_cast<char*>(malloc(resource_path.size() + 1));
+    assert(src_dir);
+    memcpy(src_dir, resource_path.c_str(), resource_path.size() + 1);
+
+    http_conn::src_dir = src_dir;
+    http_conn::user_count.store(0);
+    http_conn::is_ET = true;
+    init_socket();
+}
+
+webserver::~webserver() {
+    close(listen_fd);
+    is_close = true;
+    free(src_dir);
+}
+
+void webserver::init_socket() {
+    listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(listen_fd >= 0);
+
+    int ret = 0;
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(port);
+
+    struct linger linger = {0};
+    if (open_linger) {
+        linger.l_linger = 1;
+        linger.l_onoff = 1;
+    }
+
+    int flag = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
+    ret = bind(listen_fd, (struct sockaddr *)&address, sizeof(address));
+    assert(ret >= 0);
+    ret = listen(listen_fd, 5);
+    assert(ret >= 0);
+    set_nonblock(listen_fd);
+    LOG_DEBUG("Server initialized");
+}
+
+void webserver::start() {
+    epollers->add_fd(listen_fd, EPOLLIN | EPOLLET);
+    while (!is_close) {
+        int event_count = epollers->wait();
+        for (int i = 0; i < event_count; ++i) {
+            int sock_fd = epollers->get_event_fd(i);
+            uint32_t events = epollers->get_events(i);
+            if (sock_fd == listen_fd) {
+                deal_client();
+            }
+            else if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                auto it = users.find(sock_fd);
+                if (it != users.end()) {
+                    close_conn(&it->second);
+                }
+            }
+            else if (events & EPOLLIN) {
+                auto it = users.find(sock_fd);
+                if (it != users.end()) {
+                    deal_read(&it->second);
+                }
+            }
+            else if (events & EPOLLOUT) {
+                auto it = users.find(sock_fd);
+                if (it != users.end()) {
+                    deal_write(&it->second);
+                }
+            }
+        }
+    }
+}
+
+void webserver::deal_client() {
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+
+    // Listen socket is ET, so consume all pending connections.
+    while (true) {
+        client_addr_len = sizeof(client_addr);
+        int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+        if (conn_fd < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+            LOG_ERROR("Accept failed");
+            break;
+        }
+
+        if (http_conn::user_count.load() >= 10000) {
+            LOG_ERROR("Too many clients");
+            close(conn_fd);
+            continue;
+        }
+
+        set_nonblock(conn_fd);
+        users[conn_fd].init(conn_fd, client_addr);
+        epollers->add_fd(conn_fd, EPOLLIN | conn_event);
+        LOG_DEBUG("New client connected");
+    }
+}
+
+void webserver::deal_read(http_conn* client) {
+    pool->submit(std::bind(&webserver::on_read, this, client));
+}
+
+void webserver::deal_write(http_conn* client) {
+    pool->submit(std::bind(&webserver::on_write, this, client));
+}
+
+void webserver::close_conn(http_conn* client) {
+    epollers->del_fd(client->get_fd());
+    client->close_conn();
+    users.erase(client->get_fd());
+    LOG_DEBUG("Client connection closed");
+}
+
+void webserver::on_read(http_conn* client) {
+    int read_errno = 0;
+    ssize_t ret = client->read(&read_errno);
+    if (ret <= 0) {
+        if (ret < 0 && (read_errno == EAGAIN || read_errno == EWOULDBLOCK)) {
+            epollers->mod_fd(client->get_fd(), conn_event | EPOLLIN);
+            return;
+        }
+        close_conn(client);
+        return;
+    }
+    LOG_DEBUG("Read data from client");
+    on_process(client);
+}
+
+void webserver::on_write(http_conn* client) {
+    int write_errno = 0;
+    ssize_t ret = client->write(&write_errno);
+    if (client->to_write_bytes() == 0) {
+        if (client->is_keep_alive()) {
+            epollers->mod_fd(client->get_fd(), conn_event | EPOLLIN);
+            return;
+        }
+        close_conn(client);
+        return;
+    }
+    if (ret <= 0) {
+        if (write_errno == EAGAIN) {
+            epollers->mod_fd(client->get_fd(), conn_event | EPOLLOUT);
+            return;
+        }
+        close_conn(client);
+        return;
+    }
+    LOG_DEBUG("Write data to client");
+}
+
+void webserver::on_process(http_conn* client) {
+    if (client->process()) {
+        epollers->mod_fd(client->get_fd(), conn_event | EPOLLOUT);
+    } else {
+        epollers->mod_fd(client->get_fd(), conn_event | EPOLLIN);
+    }
+}
+
+int webserver::set_nonblock(int fd) {
+    assert(fd > 0);
+    return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+}
