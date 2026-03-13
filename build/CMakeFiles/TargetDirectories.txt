@@ -1,3 +1,0 @@
-/root/myWebServer/build/CMakeFiles/server.dir
-/root/myWebServer/build/CMakeFiles/edit_cache.dir
-/root/myWebServer/build/CMakeFiles/rebuild_cache.dir
