@@ -7,7 +7,7 @@
 webserver::webserver(int port, bool open_linger, size_t core_poolsize)
         : port(port), open_linger(open_linger), is_close(false),
             conn_event(EPOLLONESHOT | EPOLLRDHUP | EPOLLET),
-      pool(new threadpool(core_poolsize)), epollers(new epoller()) {
+      pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()) {
     src_dir = getcwd(nullptr, 256);
     assert(src_dir);
 

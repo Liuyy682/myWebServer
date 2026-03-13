@@ -30,3 +30,19 @@ add_executable(server ${SOURCE_FILES})
 target_compile_definitions(server PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(server PRIVATE Threads::Threads)
 
+add_custom_target(webbench_install
+    COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/install_webbench.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Build and install webbench into tools/webbench/bin"
+)
+
+add_custom_target(webbench_run
+    COMMAND ${CMAKE_COMMAND} -E env
+            WEBBENCH_C=100
+            WEBBENCH_T=10
+            WEBBENCH_URL=http://127.0.0.1:8080/
+            bash ${CMAKE_SOURCE_DIR}/scripts/run_webbench.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Run webbench with default pressure settings"
+)
+

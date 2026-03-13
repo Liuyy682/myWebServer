@@ -13,3 +13,5 @@
 *.exe
 /.vscode
 build/
+scripts/
+tools/

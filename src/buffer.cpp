@@ -9,7 +9,7 @@ buffer::buffer(int buffer_size) : buffer_(buffer_size) {
  //前进读取位置 len 字节
 void buffer::retrieve(size_t len) {
     assert(len <= readable_bytes());
-    read_pos.store(read_pos.load() + len);
+    read_pos.fetch_add(len);
 }
 
  //清除缓冲区中的所有数据
@@ -32,7 +32,7 @@ void buffer::append(const char* str, size_t len) {
     assert(str);
     ensure_writable(len);
     std::copy(str, str + len, begin_ptr() + write_pos.load());
-    write_pos.store(write_pos.load() + len);
+    write_pos.fetch_add(len);
 }
 
 void buffer::append(const std::string& str) {
