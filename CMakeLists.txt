@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.10)
 # 定义项目名称和使用语言
 project(WebServerProject LANGUAGES CXX)
 
+find_package(Threads REQUIRED)
+
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -25,4 +27,6 @@ set(SOURCE_FILES
 
 # 添加可执行文件
 add_executable(server ${SOURCE_FILES})
+target_compile_definitions(server PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(server PRIVATE Threads::Threads)
 

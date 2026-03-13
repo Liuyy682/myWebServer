@@ -17,6 +17,9 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr) {
     this->sock_fd = sock_fd;
     this->addr = addr;
     is_close = false;
+    read_buf.retrieve_all();
+    write_buf.retrieve_all();
+    request.init();
     user_count.fetch_add(1);
     if (!src_dir) {
         src_dir = "/tmp";
@@ -93,22 +96,26 @@ ssize_t http_conn::write(int* save_errno) {
 }
 
 bool http_conn::process() {
-    request.init();
     LOG_DEBUG("Begin processing connection.");
-
-    assert(read_buf.readable_bytes() > 0);
 
     if (read_buf.readable_bytes() <= 0) {
         LOG_ERROR("No readable bytes.");
         return false;
-    } 
-    else if (request.parse(read_buf)) {
-        LOG_DEBUG("Request parsed successfully.");
-        response.init(src_dir, request.get_path(), request.is_keep_alive(), 200);
     }
-    else {
+
+    if (!request.parse(read_buf)) {
         LOG_DEBUG("Failed to parse request.");
         response.init(src_dir, request.get_path(), false, 400);
+        request.init();
+    }
+    else if (!request.is_finish()) {
+        LOG_DEBUG("Request not complete yet.");
+        return false;
+    }
+    else {
+        LOG_DEBUG("Request parsed successfully.");
+        response.init(src_dir, request.get_path(), request.is_keep_alive(), 200);
+        request.init();
     }
     
     response.make_response(write_buf);

@@ -1,5 +1,7 @@
 #include "httprequest.h"
 
+#include <cstdlib>
+
 const std::unordered_set<std::string> http_request::DEFAULT_HTML {
             "/index", "/register", "/login",
              "/welcome", "/video", "/picture", };
@@ -26,9 +28,37 @@ bool http_request::parse(buffer& buff) {
     if (buff.readable_bytes() <= 0) {
         return false;
     }
+
     while (buff.readable_bytes() && state != FINISH) {
-        const char* line_end = std::search(buff.peek(), buff.peek() + buff.readable_bytes(), CRLF, CRLF + 2);
-        std::string line(buff.peek(), line_end);
+        if (state == BODY) {
+            size_t content_length = 0;
+            auto it = header.find("Content-Length");
+            if (it != header.end()) {
+                content_length = static_cast<size_t>(std::strtoul(it->second.c_str(), nullptr, 10));
+            }
+
+            if (content_length == 0) {
+                state = FINISH;
+                break;
+            }
+
+            if (buff.readable_bytes() < content_length) {
+                break;
+            }
+
+            body.assign(buff.peek(), buff.peek() + content_length);
+            buff.retrieve(content_length);
+            state = FINISH;
+            break;
+        }
+
+        const char* line_start = buff.peek();
+        const char* line_end = std::search(line_start, buff.peek() + buff.readable_bytes(), CRLF, CRLF + 2);
+        if (line_end == buff.peek() + buff.readable_bytes()) {
+            break;
+        }
+
+        std::string line(line_start, line_end);
         switch (state) {
             case REQUEST_LINE:
                 if (!parse_request_line(line)) {
@@ -46,17 +76,19 @@ bool http_request::parse(buffer& buff) {
             default:
                 break;
         }
-        if (line_end == buff.begin_write()) {
-            break;
-        }
         buff.retrieve_until(line_end + 2);
     }
+
+    if (state != FINISH) {
+        return true;
+    }
+
     LOG_DEBUG("Parse HTTP request finished");
     return true;
 }
 
 bool http_request::parse_request_line(const std::string& line) {
-    std::regex patten("^([^ ]*) ([^ ]*) HTTP/([^ ]*)$");
+    std::regex patten("^([^ ]+) ([^ ]+) HTTP/([0-9.]+)$");
     std::smatch sub_match;
     if (std::regex_match(line, sub_match, patten)) {
         method = sub_match[1];
@@ -65,7 +97,7 @@ bool http_request::parse_request_line(const std::string& line) {
         state = HEADERS;
         return true;
     }
-    LOG_ERROR("Parse request line failed");
+    LOG_ERROR("Parse request line failed, line='%s'", line.c_str());
     return false;
 }
 
@@ -76,10 +108,18 @@ void http_request::parse_headers(const std::string& line) {
         header[sub_match[1]] = sub_match[2];
     }
     else {
-        state = BODY;
+        auto it = header.find("Content-Length");
+        if (it != header.end() && std::strtoul(it->second.c_str(), nullptr, 10) > 0) {
+            state = BODY;
+        }
+        else {
+            state = FINISH;
+        }
     }
 }
 
 bool http_request::parse_body(const std::string& line) {
-    return false;
+    body = line;
+    state = FINISH;
+    return true;
 }

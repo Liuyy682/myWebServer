@@ -1,23 +1,54 @@
 #include "log.h"
+
 #include <chrono>
-#include <sstream>
-#include <iomanip>
+#include <cstdio>
+#include <cstdarg>
 #include <ctime>
-#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <stdexcept>
+#include <vector>
+
+#ifndef PROJECT_ROOT_DIR
+#define PROJECT_ROOT_DIR "."
+#endif
 
 Log& Log::instance() {
     static Log inst;
     return inst;
 }
 
-void Log::log(Level level, const std::string &msg) {
-    std::unique_lock<std::mutex> lock(log_mtx);
+Log::Log() : running(true), log_buffer(1024) {
+    const std::string log_path = std::string(PROJECT_ROOT_DIR) + "/webserver.log";
+    log_file.open(log_path, std::ios::out | std::ios::app);
+    if (!log_file.is_open()) {
+        throw std::runtime_error("Failed to open log file: " + log_path);
+    }
+    writer_thread = std::thread(&Log::writer_loop, this);
+}
 
+Log::~Log() {
+    running.store(false);
+    cv.notify_all();
+
+    if (writer_thread.joinable()) {
+        writer_thread.join();
+    }
+
+    if (log_file.is_open()) {
+        log_file.flush();
+        log_file.close();
+    }
+}
+
+void Log::log(Level level, const std::string &msg) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_buf{};
+    localtime_r(&time_t, &tm_buf);
 
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
 
     const char* level_str;
     switch (level) {
@@ -27,5 +58,51 @@ void Log::log(Level level, const std::string &msg) {
         case Level::Debug: level_str = "DEBUG"; break;
     }
 
-    std::cout << "[" << ss.str() << "] [" << level_str << "] " << msg << std::endl; 
+    std::string line = "[" + ss.str() + "] [" + level_str + "] " + msg;
+    {
+        std::lock_guard<std::mutex> lock(log_mtx);
+        msg_queue.push(std::move(line));
+    }
+    cv.notify_one();
+}
+
+void Log::logf(Level level, const char* fmt, ...) {
+    if (fmt == nullptr) {
+        log(level, "");
+        return;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+
+    va_list args_copy;
+    va_copy(args_copy, args);
+    const int needed = std::vsnprintf(nullptr, 0, fmt, args_copy);
+    va_end(args_copy);
+
+    if (needed < 0) {
+        va_end(args);
+        log(level, fmt);
+        return;
+    }
+    
+    log_buffer.ensure_writable(static_cast<size_t>(needed) + 1);
+    std::vsnprintf(log_buffer.begin_write(), log_buffer.writable_bytes(), fmt, args);
+    va_end(args);
+
+    log(level, std::string(log_buffer.peek(), static_cast<size_t>(needed)));
+    log_buffer.retrieve_all();
+}
+
+void Log::writer_loop() {
+    while (running.load() || !msg_queue.empty()) {
+        std::unique_lock<std::mutex> lock(log_mtx);
+        cv.wait(lock, [this] { return !running.load() || !msg_queue.empty(); });
+
+        while (!msg_queue.empty()) {
+            log_file << msg_queue.front() << std::endl;
+            msg_queue.pop();
+        }
+        log_file.flush();
+    }
 }

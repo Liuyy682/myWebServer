@@ -29,6 +29,7 @@ public:
     size_t prependable_bytes() const { return read_pos.load(); }
     const char* peek() const { return begin_ptr() + read_pos.load(); }
     const char* begin_write() const { return begin_ptr() + write_pos.load(); }
+    char* begin_write() { return begin_ptr() + write_pos.load(); }
 
 private:
     const char* begin_ptr() const { return &*buffer_.begin(); }

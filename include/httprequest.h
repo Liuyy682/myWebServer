@@ -33,6 +33,7 @@ public:
     void init();
     bool parse(buffer& buff);
     bool is_keep_alive() const;
+    bool is_finish() const { return state == FINISH; }
     std::string get_path() const { return path; }
     std::string& get_path() { return path; }
 
