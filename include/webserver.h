@@ -12,7 +12,7 @@
 
 class webserver {
 public:
-    webserver(int port, bool open_linger, size_t core_poolsize);
+    webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode);
     ~webserver();
 
     void init_socket();
@@ -28,6 +28,7 @@ private:
     void on_process(http_conn* client);
     int set_nonblock(int fd);
     void extent_time(http_conn* client);
+    void init_event_mode(int trig_mode);
 
     int port;
     
@@ -37,8 +38,10 @@ private:
     char* src_dir; 
     bool is_close{false};
     int timeout_ms{60000};
+    int trig_mode;
 
     uint32_t conn_event;
+    uint32_t listen_event;
     std::unique_ptr<threadpool> pool;
     std::unordered_map<int, http_conn> users;
     std::unique_ptr<epoller> epollers;

@@ -12,7 +12,7 @@ const std::unordered_map<std::string, int> http_request::DEFAULT_HTML_TAG {
 void http_request::init() {
     method = path = version = body = "";
     header.clear();
-    state = REQUEST_LINE;
+    state = PARSE_STATE::REQUEST_LINE;
 }
 
 bool http_request::is_keep_alive() const {
@@ -29,8 +29,8 @@ bool http_request::parse(buffer& buff) {
         return false;
     }
 
-    while (buff.readable_bytes() && state != FINISH) {
-        if (state == BODY) {
+    while (buff.readable_bytes() && state != PARSE_STATE::FINISH) {
+        if (state == PARSE_STATE::BODY) {
             size_t content_length = 0;
             auto it = header.find("Content-Length");
             if (it != header.end()) {
@@ -38,7 +38,7 @@ bool http_request::parse(buffer& buff) {
             }
 
             if (content_length == 0) {
-                state = FINISH;
+                state = PARSE_STATE::FINISH;
                 break;
             }
 
@@ -48,7 +48,7 @@ bool http_request::parse(buffer& buff) {
 
             body.assign(buff.peek(), buff.peek() + content_length);
             buff.retrieve(content_length);
-            state = FINISH;
+            state = PARSE_STATE::FINISH;
             break;
         }
 
@@ -60,15 +60,15 @@ bool http_request::parse(buffer& buff) {
 
         std::string line(line_start, line_end);
         switch (state) {
-            case REQUEST_LINE:
+            case PARSE_STATE::REQUEST_LINE:
                 if (!parse_request_line(line)) {
                     return false;
                 }
                 break;
-            case HEADERS:
+            case PARSE_STATE::HEADERS:
                 parse_headers(line);
                 break;
-            case BODY:
+            case PARSE_STATE::BODY:
                 if (!parse_body(line)) {
                     return false;
                 }
@@ -79,7 +79,7 @@ bool http_request::parse(buffer& buff) {
         buff.retrieve_until(line_end + 2);
     }
 
-    if (state != FINISH) {
+    if (state != PARSE_STATE::FINISH) {
         return true;
     }
 
@@ -94,7 +94,7 @@ bool http_request::parse_request_line(const std::string& line) {
         method = sub_match[1];
         path = sub_match[2];
         version = sub_match[3];
-        state = HEADERS;
+        state = PARSE_STATE::HEADERS;
         return true;
     }
     LOG_ERROR("Parse request line failed, line='%s'", line.c_str());
@@ -110,16 +110,16 @@ void http_request::parse_headers(const std::string& line) {
     else {
         auto it = header.find("Content-Length");
         if (it != header.end() && std::strtoul(it->second.c_str(), nullptr, 10) > 0) {
-            state = BODY;
+            state = PARSE_STATE::BODY;
         }
         else {
-            state = FINISH;
+            state = PARSE_STATE::FINISH;
         }
     }
 }
 
 bool http_request::parse_body(const std::string& line) {
     body = line;
-    state = FINISH;
+    state = PARSE_STATE::FINISH;
     return true;
 }

@@ -61,7 +61,9 @@ void heap_timer::add(int id, int timeout, const std::function<void()>& timer_cb)
 }
 
 void heap_timer::adjust(int id, int timeout) {
-    assert(!heap.empty() && ref.count(id) > 0);
+    if (id < 0 || heap.empty() || ref.count(id) == 0) {
+        return;
+    }
     size_t i = ref[id];
     heap[i].expires = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
     if (!sift_down(i, heap.size())) sift_up(i);

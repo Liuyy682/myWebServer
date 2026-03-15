@@ -10,13 +10,13 @@
 
 class http_request {
 public:
-    enum PARSE_STATE {
+    enum class PARSE_STATE {
         REQUEST_LINE,
         HEADERS,
         BODY,
         FINISH
     };
-    enum HTTP_CODE {
+    enum class HTTP_CODE {
         NO_REQUEST,
         GET_REQUEST,
         BAD_REQUEST,
@@ -33,7 +33,7 @@ public:
     void init();
     bool parse(buffer& buff);
     bool is_keep_alive() const;
-    bool is_finish() const { return state == FINISH; }
+    bool is_finish() const { return state == PARSE_STATE::FINISH; }
     std::string get_path() const { return path; }
     std::string& get_path() { return path; }
 
@@ -42,7 +42,7 @@ private:
     void parse_headers(const std::string& line);
     bool parse_body(const std::string& line);
 
-    PARSE_STATE state{REQUEST_LINE};
+    PARSE_STATE state{PARSE_STATE::REQUEST_LINE};
     std::string method, path, version, body;
     std::unordered_map<std::string, std::string> header;
 

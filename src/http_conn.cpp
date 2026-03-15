@@ -34,6 +34,7 @@ void http_conn::close_conn() {
         is_close = true;
         user_count.fetch_sub(1);
         close(sock_fd);
+        sock_fd = -1;
         LOG_DEBUG("Client disconnected");
     }
 }

@@ -18,7 +18,7 @@ Log& Log::instance() {
     return inst;
 }
 
-Log::Log() : running(true), log_buffer(1024) {
+Log::Log() : running(true) {
     const std::string log_path = std::string(PROJECT_ROOT_DIR) + "/webserver.log";
     log_file.open(log_path, std::ios::out | std::ios::app);
     if (!log_file.is_open()) {
@@ -86,12 +86,11 @@ void Log::logf(Level level, const char* fmt, ...) {
         return;
     }
     
-    log_buffer.ensure_writable(static_cast<size_t>(needed) + 1);
-    std::vsnprintf(log_buffer.begin_write(), log_buffer.writable_bytes(), fmt, args);
+    std::vector<char> local_buffer(static_cast<size_t>(needed) + 1);
+    std::vsnprintf(local_buffer.data(), local_buffer.size(), fmt, args);
     va_end(args);
 
-    log(level, std::string(log_buffer.peek(), static_cast<size_t>(needed)));
-    log_buffer.retrieve_all();
+    log(level, std::string(local_buffer.data(), static_cast<size_t>(needed)));
 }
 
 void Log::writer_loop() {

@@ -8,7 +8,6 @@
 #include <queue>
 #include <string>
 #include <thread>
-#include "buffer.h"
 
 class Log {
 public:
@@ -35,7 +34,6 @@ private:
     std::thread writer_thread;
     std::ofstream log_file;
     std::atomic<bool> running;
-    buffer log_buffer;
 };
 
 #define LOG_INFO(fmt, ...) Log::instance().logf(Log::Level::Info, fmt, ##__VA_ARGS__)

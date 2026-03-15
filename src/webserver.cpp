@@ -4,9 +4,8 @@
 #include <cstring>
 #include <string>
 
-webserver::webserver(int port, bool open_linger, size_t core_poolsize)
-        : port(port), open_linger(open_linger), is_close(false),
-            conn_event(EPOLLONESHOT | EPOLLRDHUP | EPOLLET),
+webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode)
+        : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode),
       pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()),
       timer(std::make_unique<heap_timer>()) {
     src_dir = getcwd(nullptr, 256);
@@ -37,7 +36,7 @@ webserver::webserver(int port, bool open_linger, size_t core_poolsize)
 
     http_conn::src_dir = src_dir;
     http_conn::user_count.store(0);
-    http_conn::is_ET = true;
+    init_event_mode(trig_mode);
     init_socket();
 }
 
@@ -73,6 +72,30 @@ void webserver::init_socket() {
     LOG_DEBUG("Server initialized");
 }
 
+void webserver::init_event_mode(int trig_mode) {
+    conn_event = EPOLLRDHUP | EPOLLONESHOT;
+    listen_event = EPOLLRDHUP;
+    switch(trig_mode) {
+        case 0:
+            break;
+        case 1:
+            conn_event |= EPOLLET;
+            break;
+        case 2:
+            listen_event |= EPOLLET;
+            break;
+        case 3:
+            listen_event |= EPOLLET;
+            conn_event |= EPOLLET;
+            break;
+        default:
+            LOG_WARN("Invalid trig_mode, defaulting to EPOLLET for both conn_event and listen_event");
+            listen_event |= EPOLLET;
+            conn_event |= EPOLLET;
+    }
+    http_conn::is_ET = conn_event & EPOLLET;
+}
+
 void webserver::start() {
     int time_ms = -1;
     epollers->add_fd(listen_fd, EPOLLIN | EPOLLET);
@@ -90,19 +113,25 @@ void webserver::start() {
             else if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                 auto it = users.find(sock_fd);
                 if (it != users.end()) {
-                    close_conn(&it->second);
+                    if (it->second.get_fd() >= 0) {
+                        close_conn(&it->second);
+                    }
                 }
             }
             else if (events & EPOLLIN) {
                 auto it = users.find(sock_fd);
                 if (it != users.end()) {
-                    deal_read(&it->second);
+                    if (it->second.get_fd() >= 0) {
+                        deal_read(&it->second);
+                    }
                 }
             }
             else if (events & EPOLLOUT) {
                 auto it = users.find(sock_fd);
                 if (it != users.end()) {
-                    deal_write(&it->second);
+                    if (it->second.get_fd() >= 0) {
+                        deal_write(&it->second);
+                    }
                 }
             }
         }
@@ -113,8 +142,7 @@ void webserver::deal_client() {
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
 
-    // Listen socket is ET, so consume all pending connections.
-    while (true) {
+    do {
         client_addr_len = sizeof(client_addr);
         int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_addr_len);
         if (conn_fd < 0) {
@@ -138,7 +166,7 @@ void webserver::deal_client() {
         }
         epollers->add_fd(conn_fd, EPOLLIN | conn_event);
         LOG_DEBUG("New client connected");
-    }
+    } while (listen_event & EPOLLET);
 }
 
 void webserver::deal_read(http_conn* client) {
@@ -154,11 +182,13 @@ void webserver::deal_write(http_conn* client) {
 void webserver::close_conn(http_conn* client) {
     epollers->del_fd(client->get_fd());
     client->close_conn();
-    users.erase(client->get_fd());
     LOG_DEBUG("Client connection closed");
 }
 
 void webserver::on_read(http_conn* client) {
+    if (client->get_fd() < 0) {
+        return;
+    }
     int read_errno = 0;
     ssize_t ret = client->read(&read_errno);
     if (ret <= 0) {
@@ -174,6 +204,9 @@ void webserver::on_read(http_conn* client) {
 }
 
 void webserver::on_write(http_conn* client) {
+    if (client->get_fd() < 0) {
+        return;
+    }
     int write_errno = 0;
     ssize_t ret = client->write(&write_errno);
     if (client->to_write_bytes() == 0) {
@@ -196,6 +229,9 @@ void webserver::on_write(http_conn* client) {
 }
 
 void webserver::on_process(http_conn* client) {
+    if (client->get_fd() < 0) {
+        return;
+    }
     if (client->process()) {
         epollers->mod_fd(client->get_fd(), conn_event | EPOLLOUT);
     } else {
@@ -209,5 +245,10 @@ int webserver::set_nonblock(int fd) {
 }
 
 void webserver::extent_time(http_conn* client) {
-    if (timeout_ms > 0) timer->adjust(client->get_fd(), timeout_ms);
+    if (timeout_ms > 0) {
+        int fd = client->get_fd();
+        if (fd >= 0) {
+            timer->adjust(fd, timeout_ms);
+        }
+    }
 }
