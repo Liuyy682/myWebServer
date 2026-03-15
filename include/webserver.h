@@ -8,6 +8,7 @@
 #include "threadpool.h"
 #include "http_conn.h"
 #include "epoller.h"
+#include "heap_timer.h"
 
 class webserver {
 public:
@@ -26,6 +27,7 @@ private:
     void close_conn(http_conn* client);
     void on_process(http_conn* client);
     int set_nonblock(int fd);
+    void extent_time(http_conn* client);
 
     int port;
     
@@ -34,9 +36,11 @@ private:
     bool open_linger;
     char* src_dir; 
     bool is_close{false};
+    int timeout_ms{60000};
 
     uint32_t conn_event;
     std::unique_ptr<threadpool> pool;
     std::unordered_map<int, http_conn> users;
     std::unique_ptr<epoller> epollers;
+    std::unique_ptr<heap_timer> timer;
 };

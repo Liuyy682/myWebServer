@@ -7,7 +7,8 @@
 webserver::webserver(int port, bool open_linger, size_t core_poolsize)
         : port(port), open_linger(open_linger), is_close(false),
             conn_event(EPOLLONESHOT | EPOLLRDHUP | EPOLLET),
-      pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()) {
+      pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()),
+      timer(std::make_unique<heap_timer>()) {
     src_dir = getcwd(nullptr, 256);
     assert(src_dir);
 
@@ -73,9 +74,13 @@ void webserver::init_socket() {
 }
 
 void webserver::start() {
+    int time_ms = -1;
     epollers->add_fd(listen_fd, EPOLLIN | EPOLLET);
     while (!is_close) {
-        int event_count = epollers->wait();
+        if (timeout_ms > 0) {
+                time_ms = timer->get_next_tick();
+            }
+        int event_count = epollers->wait(time_ms);
         for (int i = 0; i < event_count; ++i) {
             int sock_fd = epollers->get_event_fd(i);
             uint32_t events = epollers->get_events(i);
@@ -128,16 +133,21 @@ void webserver::deal_client() {
 
         set_nonblock(conn_fd);
         users[conn_fd].init(conn_fd, client_addr);
+        if (timeout_ms > 0) {
+            timer->add(conn_fd, timeout_ms, std::bind(&webserver::close_conn, this, &users[conn_fd]));
+        }
         epollers->add_fd(conn_fd, EPOLLIN | conn_event);
         LOG_DEBUG("New client connected");
     }
 }
 
 void webserver::deal_read(http_conn* client) {
+    extent_time(client);
     pool->submit(std::bind(&webserver::on_read, this, client));
 }
 
 void webserver::deal_write(http_conn* client) {
+    extent_time(client);
     pool->submit(std::bind(&webserver::on_write, this, client));
 }
 
@@ -196,4 +206,8 @@ void webserver::on_process(http_conn* client) {
 int webserver::set_nonblock(int fd) {
     assert(fd > 0);
     return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+}
+
+void webserver::extent_time(http_conn* client) {
+    if (timeout_ms > 0) timer->adjust(client->get_fd(), timeout_ms);
 }

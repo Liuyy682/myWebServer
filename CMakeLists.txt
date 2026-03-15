@@ -22,6 +22,7 @@ set(SOURCE_FILES
     src/httprequest.cpp
     src/httpresponse.cpp
     src/buffer.cpp
+    src/heap_timer.cpp
     main.cpp
 )
 

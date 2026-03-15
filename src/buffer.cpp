@@ -80,7 +80,7 @@ ssize_t buffer::read_fd(int fd, int* save_errno) {
         *save_errno = errno;
     }
     else if (static_cast<size_t>(len) <= writable) {
-        write_pos.store(write_pos.load() + len);
+        write_pos.fetch_add(len);
     }
     else {
         append(buff, len - writable);
@@ -96,6 +96,6 @@ ssize_t buffer::write_fd(int fd, int* save_errno) {
         *save_errno = errno;
         return len;
     }
-    read_pos.store(read_pos.load() + len);
+    read_pos.fetch_add(len);
     return len;
 }
