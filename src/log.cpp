@@ -1,14 +1,5 @@
 #include "log.h"
 
-#include <chrono>
-#include <cstdio>
-#include <cstdarg>
-#include <ctime>
-#include <iomanip>
-#include <sstream>
-#include <stdexcept>
-#include <vector>
-
 #ifndef PROJECT_ROOT_DIR
 #define PROJECT_ROOT_DIR "."
 #endif

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <netinet/in.h>
+#include <cassert>
+#include <cerrno>
 #include "buffer.h"
 #include "httprequest.h"
 #include "httpresponse.h"

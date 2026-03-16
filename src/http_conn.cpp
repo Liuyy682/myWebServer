@@ -1,6 +1,3 @@
-#include <cassert>
-#include <cerrno>
-
 #include "http_conn.h"
 
 bool http_conn::is_ET;

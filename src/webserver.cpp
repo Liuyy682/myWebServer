@@ -1,8 +1,4 @@
 #include "webserver.h"
-#include <cerrno>
-#include <cstdlib>
-#include <cstring>
-#include <string>
 
 webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode)
         : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode),

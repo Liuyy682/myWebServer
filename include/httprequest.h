@@ -5,6 +5,7 @@
 #include <string>
 #include <regex>
 #include <errno.h>
+#include <cstdlib>
 #include "buffer.h"
 #include "log.h"
 

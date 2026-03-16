@@ -1,7 +1,5 @@
 #include "httprequest.h"
 
-#include <cstdlib>
-
 const std::unordered_set<std::string> http_request::DEFAULT_HTML {
             "/index", "/register", "/login",
              "/welcome", "/video", "/picture", };
@@ -93,6 +91,16 @@ bool http_request::parse_request_line(const std::string& line) {
     if (std::regex_match(line, sub_match, patten)) {
         method = sub_match[1];
         path = sub_match[2];
+        size_t query_pos = path.find('?');
+        if (query_pos != std::string::npos) {
+            path = path.substr(0, query_pos);
+        }
+        if (path == "/") {
+            path = "/index.html";
+        }
+        else if (DEFAULT_HTML.count(path)) {
+            path += ".html";
+        }
         version = sub_match[3];
         state = PARSE_STATE::HEADERS;
         return true;

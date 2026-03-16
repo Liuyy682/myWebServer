@@ -4,6 +4,10 @@
 #include <sys/epoll.h>
 #include <cassert>
 #include <netinet/in.h>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include "log.h"
 #include "threadpool.h"
 #include "http_conn.h"
