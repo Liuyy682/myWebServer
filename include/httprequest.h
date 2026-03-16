@@ -6,8 +6,10 @@
 #include <regex>
 #include <errno.h>
 #include <cstdlib>
+#include <mysql/mysql.h>
 #include "buffer.h"
 #include "log.h"
+#include "sql_conn_RAII.h"
 
 class http_request {
 public:
@@ -43,9 +45,16 @@ private:
     void parse_headers(const std::string& line);
     bool parse_body(const std::string& line);
 
+    void parse_from_urlencoded();
+    void parse_post();
+    static bool user_verify(const std::string& name, const std::string& pwd, bool is_register);
+    static int convert_hex(char c);
+    std::string url_decode(const std::string& str);
+
     PARSE_STATE state{PARSE_STATE::REQUEST_LINE};
     std::string method, path, version, body;
     std::unordered_map<std::string, std::string> header;
+    std::unordered_map<std::string, std::string> post;
 
     static const std::unordered_set<std::string> DEFAULT_HTML;
     static const std::unordered_map<std::string, int> DEFAULT_HTML_TAG;

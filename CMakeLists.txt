@@ -23,13 +23,14 @@ set(SOURCE_FILES
     src/httpresponse.cpp
     src/buffer.cpp
     src/heap_timer.cpp
+    src/sql_conn_pool.cpp
     main.cpp
 )
 
 # 添加可执行文件
 add_executable(server ${SOURCE_FILES})
 target_compile_definitions(server PRIVATE PROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}")
-target_link_libraries(server PRIVATE Threads::Threads)
+target_link_libraries(server PRIVATE Threads::Threads mysqlclient)
 
 add_custom_target(webbench_install
     COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/install_webbench.sh

@@ -1,18 +1,22 @@
 #include "httprequest.h"
 
+ // 初始化默认HTML页面路径集合
 const std::unordered_set<std::string> http_request::DEFAULT_HTML {
             "/index", "/register", "/login",
              "/welcome", "/video", "/picture", };
 
-const std::unordered_map<std::string, int> http_request::DEFAULT_HTML_TAG {
+ // 默认HTML标签及其对应的整数值
+const std::unordered_map<std::string, int> http_request::DEFAULT_HTML_TAG { 
             {"/register.html", 0}, {"/login.html", 1},  };
 
+ // 初始化HTTP请求对象的状态，包括方法、路径、版本、请求体和头信息
 void http_request::init() {
     method = path = version = body = "";
     header.clear();
     state = PARSE_STATE::REQUEST_LINE;
 }
 
+ // 判断是否保持连接
 bool http_request::is_keep_alive() const {
     auto it = header.find("Connection");
     if (it != header.end()) {
@@ -21,6 +25,7 @@ bool http_request::is_keep_alive() const {
     return false;
 }
 
+ // 解析HTTP请求
 bool http_request::parse(buffer& buff) {
     const char CRLF[] = "\r\n";
     if (buff.readable_bytes() <= 0) {
@@ -32,11 +37,11 @@ bool http_request::parse(buffer& buff) {
             size_t content_length = 0;
             auto it = header.find("Content-Length");
             if (it != header.end()) {
-                content_length = static_cast<size_t>(std::strtoul(it->second.c_str(), nullptr, 10));
+                content_length = static_cast<size_t>(std::strtoul(it->second.c_str(), nullptr, 10)); // 从请求头获取内容长度
             }
 
             if (content_length == 0) {
-                state = PARSE_STATE::FINISH;
+                state = PARSE_STATE::FINISH; // 如果内容长度为0，则直接完成解析
                 break;
             }
 
@@ -44,9 +49,9 @@ bool http_request::parse(buffer& buff) {
                 break;
             }
 
-            body.assign(buff.peek(), buff.peek() + content_length);
+            body.assign(buff.peek(), buff.peek() + content_length); // 读取请求体内容
             buff.retrieve(content_length);
-            state = PARSE_STATE::FINISH;
+                state = PARSE_STATE::FINISH; // 内容解析完成，设置状态为完成
             break;
         }
 
@@ -57,6 +62,7 @@ bool http_request::parse(buffer& buff) {
         }
 
         std::string line(line_start, line_end);
+        // 解析不同的请求状态
         switch (state) {
             case PARSE_STATE::REQUEST_LINE:
                 if (!parse_request_line(line)) {
@@ -81,17 +87,18 @@ bool http_request::parse(buffer& buff) {
         return true;
     }
 
-    LOG_DEBUG("Parse HTTP request finished");
+    LOG_DEBUG("Parse HTTP request finished"); // 记录解析完成的日志
     return true;
 }
 
+ // 解析请求行
 bool http_request::parse_request_line(const std::string& line) {
     std::regex patten("^([^ ]+) ([^ ]+) HTTP/([0-9.]+)$");
     std::smatch sub_match;
     if (std::regex_match(line, sub_match, patten)) {
         method = sub_match[1];
         path = sub_match[2];
-        size_t query_pos = path.find('?');
+        size_t query_pos = path.find('?'); // 检查并剥离路径中的查询参数
         if (query_pos != std::string::npos) {
             path = path.substr(0, query_pos);
         }
@@ -105,12 +112,13 @@ bool http_request::parse_request_line(const std::string& line) {
         state = PARSE_STATE::HEADERS;
         return true;
     }
-    LOG_ERROR("Parse request line failed, line='%s'", line.c_str());
+        LOG_ERROR("Parse request line failed, line='%s'", line.c_str()); // 记录解析失败的错误日志
     return false;
 }
 
+ // 解析请求头
 void http_request::parse_headers(const std::string& line) {
-    std::regex patten("^([^:]*): ?(.*)$");
+    std::regex patten("^([^:]*): ?(.*)$"); // 检查并解析头字段
     std::smatch sub_match;
     if (std::regex_match(line, sub_match, patten)) {
         header[sub_match[1]] = sub_match[2];
@@ -126,8 +134,125 @@ void http_request::parse_headers(const std::string& line) {
     }
 }
 
+ // 解析请求体
 bool http_request::parse_body(const std::string& line) {
-    body = line;
+    body = line; // 将请求体内容存储到body中
     state = PARSE_STATE::FINISH;
     return true;
+}
+
+void http_request::parse_from_urlencoded() {
+    // 先对整个 body 进行 URL 解码（需自己实现 url_decode）
+    std::string decoded_body = url_decode(body);
+
+    // 再用 regex 分割（或更简单的 string split）
+    std::regex pattern("([^&=]*)=([^&]*)");
+    auto begin = std::sregex_iterator(decoded_body.begin(), decoded_body.end(), pattern);
+    auto end = std::sregex_iterator();
+
+    for (auto it = begin; it != end; ++it) {
+        std::string key = (*it)[1].str();
+        std::string val = (*it)[2].str();
+        post[key] = val;
+    }
+}
+
+std::string http_request::url_decode(const std::string& str) {
+    std::string result;
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] == '%') {
+            if (i + 2 < str.size()) {
+                int high = convert_hex(str[i + 1]);
+                int low = convert_hex(str[i + 2]);
+                if (high != -1 && low != -1) {
+                    result += static_cast<char>((high << 4) | low);
+                    i += 2;
+                }
+            }
+        }
+        else if (str[i] == '+') {
+            result += ' ';
+        }
+        else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+int http_request::convert_hex(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    else if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    return -1;
+}
+
+void http_request::parse_post() {
+    if (method == "POST" && header["Content-Type"] == "application/x-www-form-urlencoded") {
+        parse_from_urlencoded();
+        if(DEFAULT_HTML_TAG.count(path)) {
+            int tag = DEFAULT_HTML_TAG.find(path)->second;
+            LOG_DEBUG("Tag:%d", tag);
+            if(tag == 0 || tag == 1) {
+                bool isLogin = (tag == 1);
+                if(user_verify(post["username"], post["password"], isLogin)) {
+                    path = "/welcome.html";
+                } 
+                else {
+                    path = "/error.html";
+                }
+            }
+        }
+    }
+}
+
+bool http_request::user_verify(const std::string& name, const std::string& pwd, bool is_register) {
+    MYSQL* conn;
+    sql_conn_RAII(&conn, sql_conn_pool::get_instance());
+    if (conn == nullptr) {
+        return false;
+    }
+    char order[256] = {0};
+    sprintf(order, "SELECT username, password FROM user WHERE username='%s' LIMIT 1", name.c_str());
+    bool verify_result = false;
+    if (!is_register) verify_result = true;
+    MYSQL_RES* res = mysql_store_result(conn);
+    if (mysql_query(conn, order)) {
+        LOG_ERROR("MySQL query error!");
+        mysql_free_result(res);
+        return false;
+    }
+    
+    while (MYSQL_ROW row = mysql_fetch_row(res)) {
+        std::string db_name(row[0]);
+        std::string db_pwd(row[1]);
+        if (db_name == name) {
+            if (is_register) {
+                verify_result = false;
+            }
+            else if (db_pwd == pwd) {
+                verify_result = true;
+            }
+            break;
+        }
+    }
+    mysql_free_result(res);
+    if (!is_register && verify_result) {
+        char insert_order[256] = {0};
+        sprintf(insert_order, "INSERT INTO user(username, password) VALUES('%s', '%s')", name.c_str(), pwd.c_str());
+        if (mysql_query(conn, insert_order)) {
+            LOG_ERROR("MySQL insert error!");
+            verify_result = false;
+        }
+    }
+
+    sql_conn_pool::get_instance()->release_conn(conn);
+    LOG_DEBUG("User verify result: %s", verify_result ? "success" : "failure");
+    return verify_result;
 }
