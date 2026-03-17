@@ -33,28 +33,6 @@ bool http_request::parse(buffer& buff) {
     }
 
     while (buff.readable_bytes() && state != PARSE_STATE::FINISH) {
-        if (state == PARSE_STATE::BODY) {
-            size_t content_length = 0;
-            auto it = header.find("Content-Length");
-            if (it != header.end()) {
-                content_length = static_cast<size_t>(std::strtoul(it->second.c_str(), nullptr, 10)); // 从请求头获取内容长度
-            }
-
-            if (content_length == 0) {
-                state = PARSE_STATE::FINISH; // 如果内容长度为0，则直接完成解析
-                break;
-            }
-
-            if (buff.readable_bytes() < content_length) {
-                break;
-            }
-
-            body.assign(buff.peek(), buff.peek() + content_length); // 读取请求体内容
-            buff.retrieve(content_length);
-                state = PARSE_STATE::FINISH; // 内容解析完成，设置状态为完成
-            break;
-        }
-
         const char* line_start = buff.peek();
         const char* line_end = std::search(line_start, buff.peek() + buff.readable_bytes(), CRLF, CRLF + 2);
         if (line_end == buff.peek() + buff.readable_bytes()) {
@@ -70,12 +48,12 @@ bool http_request::parse(buffer& buff) {
                 }
                 break;
             case PARSE_STATE::HEADERS:
+                LOG_DEBUG("Parsing header line: %s", line.c_str());
                 parse_headers(line);
                 break;
             case PARSE_STATE::BODY:
-                if (!parse_body(line)) {
-                    return false;
-                }
+                LOG_DEBUG("Parsing body line: %s", line.c_str());
+                parse_body(line);
                 break;
             default:
                 break;
@@ -84,10 +62,11 @@ bool http_request::parse(buffer& buff) {
     }
 
     if (state != PARSE_STATE::FINISH) {
-        return true;
+        LOG_ERROR("Request not complete yet.");
+        return false;
     }
 
-    LOG_DEBUG("Parse HTTP request finished"); // 记录解析完成的日志
+    LOG_INFO("Parse HTTP request finished"); // 记录解析完成的日志
     return true;
 }
 
@@ -135,14 +114,14 @@ void http_request::parse_headers(const std::string& line) {
 }
 
  // 解析请求体
-bool http_request::parse_body(const std::string& line) {
+void http_request::parse_body(const std::string& line) {
     body = line; // 将请求体内容存储到body中
+    parse_post();
     state = PARSE_STATE::FINISH;
-    return true;
 }
 
 void http_request::parse_from_urlencoded() {
-    // 先对整个 body 进行 URL 解码（需自己实现 url_decode）
+    // 先对整个 body 进行 URL 解码
     std::string decoded_body = url_decode(body);
 
     // 再用 regex 分割（或更简单的 string split）
@@ -253,6 +232,6 @@ bool http_request::user_verify(const std::string& name, const std::string& pwd, 
     }
 
     sql_conn_pool::get_instance()->release_conn(conn);
-    LOG_DEBUG("User verify result: %s", verify_result ? "success" : "failure");
+    LOG_INFO("User verify result: %s", verify_result ? "success" : "failure");
     return verify_result;
 }

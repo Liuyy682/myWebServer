@@ -43,7 +43,7 @@ public:
 private:
     bool parse_request_line(const std::string& line);
     void parse_headers(const std::string& line);
-    bool parse_body(const std::string& line);
+    void parse_body(const std::string& line);
 
     void parse_from_urlencoded();
     void parse_post();

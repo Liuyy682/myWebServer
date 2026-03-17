@@ -16,7 +16,7 @@
 
 class webserver {
 public:
-    webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode);
+    webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode, int is_log_write);
     ~webserver();
 
     void init_socket();
@@ -43,6 +43,7 @@ private:
     bool is_close{false};
     int timeout_ms{60000};
     int trig_mode;
+    int is_log_write;
 
     uint32_t conn_event;
     uint32_t listen_event;

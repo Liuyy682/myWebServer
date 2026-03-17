@@ -1,9 +1,11 @@
 #include "webserver.h"
 
-webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode)
-        : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode),
+webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode, int is_log_write)
+        : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode), is_log_write(is_log_write),
       pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()),
       timer(std::make_unique<heap_timer>()) {
+        Log::set_enabled(is_log_write != 0);
+
     src_dir = getcwd(nullptr, 256);
     assert(src_dir);
 
@@ -161,7 +163,7 @@ void webserver::deal_client() {
             timer->add(conn_fd, timeout_ms, std::bind(&webserver::close_conn, this, &users[conn_fd]));
         }
         epollers->add_fd(conn_fd, EPOLLIN | conn_event);
-        LOG_DEBUG("New client connected");
+        LOG_INFO("New client connected");
     } while (listen_event & EPOLLET);
 }
 

@@ -22,7 +22,7 @@ void http_conn::init(int sock_fd, const sockaddr_in& addr) {
         src_dir = "/tmp";
     }
     assert(sock_fd > 0);
-    LOG_DEBUG("Client connected");
+    LOG_INFO("Client connected");
 }
 
 void http_conn::close_conn() {
@@ -32,7 +32,7 @@ void http_conn::close_conn() {
         user_count.fetch_sub(1);
         close(sock_fd);
         sock_fd = -1;
-        LOG_DEBUG("Client disconnected");
+        LOG_INFO("Client disconnected");
     }
 }
 
@@ -102,16 +102,16 @@ bool http_conn::process() {
     }
 
     if (!request.parse(read_buf)) {
-        LOG_DEBUG("Failed to parse request.");
+        LOG_ERROR("Failed to parse request.");
         response.init(src_dir, request.get_path(), false, 400);
         request.init();
     }
     else if (!request.is_finish()) {
-        LOG_DEBUG("Request not complete yet.");
+        LOG_ERROR("Request not complete yet.");
         return false;
     }
     else {
-        LOG_DEBUG("Request parsed successfully.");
+        LOG_INFO("Request parsed successfully.");
         response.init(src_dir, request.get_path(), request.is_keep_alive(), 200);
         request.init();
     }
@@ -131,7 +131,7 @@ bool http_conn::process() {
         return false;
     }
 
-    LOG_DEBUG("Response buffer prepared.");
+    LOG_INFO("Response buffer prepared.");
 
     if (response.file_len() > 0 && response.file()) {
         LOG_DEBUG("File to send.");
@@ -140,6 +140,6 @@ bool http_conn::process() {
         iov_cnt = 2;
     }
     
-    LOG_DEBUG("Process completed.");
+    LOG_INFO("Process completed.");
     return true;
 }

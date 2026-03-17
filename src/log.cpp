@@ -9,6 +9,14 @@ Log& Log::instance() {
     return inst;
 }
 
+void Log::set_enabled(bool enabled_flag) {
+    enabled.store(enabled_flag, std::memory_order_relaxed);
+}
+
+bool Log::is_enabled() {
+    return enabled.load(std::memory_order_relaxed);
+}
+
 Log::Log() : running(true) {
     const std::string log_path = std::string(PROJECT_ROOT_DIR) + "/webserver.log";
     log_file.open(log_path, std::ios::out | std::ios::app);
@@ -33,6 +41,10 @@ Log::~Log() {
 }
 
 void Log::log(Level level, const std::string &msg) {
+    if (!is_enabled()) {
+        return;
+    }
+
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
     std::tm tm_buf{};
@@ -58,6 +70,10 @@ void Log::log(Level level, const std::string &msg) {
 }
 
 void Log::logf(Level level, const char* fmt, ...) {
+    if (!is_enabled()) {
+        return;
+    }
+
     if (fmt == nullptr) {
         log(level, "");
         return;

@@ -7,7 +7,7 @@ project(WebServerProject LANGUAGES CXX)
 find_package(Threads REQUIRED)
 
 # 设置C++标准
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # 包含头文件目录
