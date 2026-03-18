@@ -4,7 +4,7 @@ webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_
         : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode), is_log_write(is_log_write),
       pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()),
       timer(std::make_unique<heap_timer>()) {
-        Log::set_enabled(is_log_write != 0);
+    Log::set_enabled(is_log_write != 0);
 
     src_dir = getcwd(nullptr, 256);
     assert(src_dir);
@@ -34,6 +34,28 @@ webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_
 
     http_conn::src_dir = src_dir;
     http_conn::user_count.store(0);
+
+    const char* db_host = "localhost";
+    const char* db_user = "root";
+    const char* db_password = "root";
+    const char* db_name = "webserver";
+    const char* db_port_env = "1234";
+    const char* db_conn_size_env = "10";
+    if (db_host && db_user && db_password && db_name) {
+        int db_port = db_port_env ? std::atoi(db_port_env) : 3306;
+        int db_conn_size = db_conn_size_env ? std::atoi(db_conn_size_env) : 10;
+        if (db_port <= 0) {
+            db_port = 3306;
+        }
+        if (db_conn_size <= 0) {
+            db_conn_size = 10;
+        }
+        sql_conn_pool::get_instance()->init(db_host, db_port, db_user, db_password, db_name, db_conn_size);
+        LOG_INFO("MySQL pool initialized");
+    } else {
+        LOG_WARN("MySQL env not fully configured (need DB_HOST/DB_USER/DB_PASSWORD/DB_NAME), auth will return error page");
+    }
+
     init_event_mode(trig_mode);
     init_socket();
 }
@@ -67,7 +89,7 @@ void webserver::init_socket() {
     ret = listen(listen_fd, 5);
     assert(ret >= 0);
     set_nonblock(listen_fd);
-    LOG_DEBUG("Server initialized");
+    LOG_INFO("Server initialized");
 }
 
 void webserver::init_event_mode(int trig_mode) {

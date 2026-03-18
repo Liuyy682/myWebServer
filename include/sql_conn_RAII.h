@@ -11,7 +11,9 @@ public:
     }
 
     ~sql_conn_RAII() {
-        pool->release_conn(sql);
+        if (pool && sql) {
+            pool->release_conn(sql);
+        }
     }
 
 private:

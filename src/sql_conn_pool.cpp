@@ -25,6 +25,7 @@ void sql_conn_pool::init(const char* host, int port, const char* user, const cha
         conn_queue.push(conn);
     }
     this->conn_size = conn_size;
+    this->is_initialized = true;
 }
 
 sql_conn_pool* sql_conn_pool::get_instance() {
@@ -34,6 +35,10 @@ sql_conn_pool* sql_conn_pool::get_instance() {
 
 MYSQL* sql_conn_pool::get_conn() {
     std::unique_lock<std::mutex> lock(sql_mutex);
+    if (!is_initialized) {
+        LOG_ERROR("MySQL pool is not initialized");
+        return nullptr;
+    }
     sql_cv.wait(lock, [this] { return !conn_queue.empty(); });
     MYSQL* conn = conn_queue.front();
     conn_queue.pop();

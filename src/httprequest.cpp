@@ -33,6 +33,27 @@ bool http_request::parse(buffer& buff) {
     }
 
     while (buff.readable_bytes() && state != PARSE_STATE::FINISH) {
+        if (state == PARSE_STATE::BODY) {
+            auto it = header.find("Content-Length");
+            size_t content_len = 0;
+            if (it != header.end()) {
+                content_len = std::strtoul(it->second.c_str(), nullptr, 10);
+            }
+
+            if (content_len == 0) {
+                state = PARSE_STATE::FINISH;
+                break;
+            }
+
+            if (buff.readable_bytes() < content_len) {
+                return true;
+            }
+
+            parse_body(std::string(buff.peek(), buff.peek() + content_len));
+            buff.retrieve(content_len);
+            break;
+        }
+
         const char* line_start = buff.peek();
         const char* line_end = std::search(line_start, buff.peek() + buff.readable_bytes(), CRLF, CRLF + 2);
         if (line_end == buff.peek() + buff.readable_bytes()) {
@@ -62,8 +83,7 @@ bool http_request::parse(buffer& buff) {
     }
 
     if (state != PARSE_STATE::FINISH) {
-        LOG_ERROR("Request not complete yet.");
-        return false;
+        return true;
     }
 
     LOG_INFO("Parse HTTP request finished"); // 记录解析完成的日志
@@ -91,7 +111,7 @@ bool http_request::parse_request_line(const std::string& line) {
         state = PARSE_STATE::HEADERS;
         return true;
     }
-        LOG_ERROR("Parse request line failed, line='%s'", line.c_str()); // 记录解析失败的错误日志
+    LOG_ERROR("Parse request line failed, line='%s'", line.c_str()); // 记录解析失败的错误日志
     return false;
 }
 
@@ -179,8 +199,8 @@ void http_request::parse_post() {
             int tag = DEFAULT_HTML_TAG.find(path)->second;
             LOG_DEBUG("Tag:%d", tag);
             if(tag == 0 || tag == 1) {
-                bool isLogin = (tag == 1);
-                if(user_verify(post["username"], post["password"], isLogin)) {
+                bool isRegister = (tag == 0);
+                if(user_verify(post["username"], post["password"], isRegister)) {
                     path = "/welcome.html";
                 } 
                 else {
@@ -197,41 +217,50 @@ bool http_request::user_verify(const std::string& name, const std::string& pwd, 
     if (conn == nullptr) {
         return false;
     }
-    char order[256] = {0};
-    sprintf(order, "SELECT username, password FROM user WHERE username='%s' LIMIT 1", name.c_str());
-    bool verify_result = false;
-    if (!is_register) verify_result = true;
-    MYSQL_RES* res = mysql_store_result(conn);
-    if (mysql_query(conn, order)) {
+
+    std::string esc_name(name.size() * 2 + 1, '\0');
+    std::string esc_pwd(pwd.size() * 2 + 1, '\0');
+    unsigned long esc_name_len = mysql_real_escape_string(conn, &esc_name[0], name.c_str(), name.size());
+    unsigned long esc_pwd_len = mysql_real_escape_string(conn, &esc_pwd[0], pwd.c_str(), pwd.size());
+    esc_name.resize(esc_name_len);
+    esc_pwd.resize(esc_pwd_len);
+
+    char select_sql[512] = {0};
+    snprintf(select_sql, sizeof(select_sql),
+             "SELECT username, password FROM user WHERE username='%s' LIMIT 1", esc_name.c_str());
+    if (mysql_query(conn, select_sql)) {
         LOG_ERROR("MySQL query error!");
-        mysql_free_result(res);
         return false;
     }
-    
-    while (MYSQL_ROW row = mysql_fetch_row(res)) {
-        std::string db_name(row[0]);
-        std::string db_pwd(row[1]);
-        if (db_name == name) {
-            if (is_register) {
-                verify_result = false;
-            }
-            else if (db_pwd == pwd) {
-                verify_result = true;
-            }
-            break;
-        }
+
+    MYSQL_RES* res = mysql_store_result(conn);
+    if (res == nullptr) {
+        LOG_ERROR("MySQL store result error!");
+        return false;
     }
-    mysql_free_result(res);
-    if (!is_register && verify_result) {
-        char insert_order[256] = {0};
-        sprintf(insert_order, "INSERT INTO user(username, password) VALUES('%s', '%s')", name.c_str(), pwd.c_str());
-        if (mysql_query(conn, insert_order)) {
-            LOG_ERROR("MySQL insert error!");
-            verify_result = false;
+
+    MYSQL_ROW row = mysql_fetch_row(res);
+    bool user_exists = (row != nullptr);
+    bool verify_result = false;
+
+    if (is_register) {
+        if (!user_exists) {
+            char insert_sql[512] = {0};
+            snprintf(insert_sql, sizeof(insert_sql),
+                     "INSERT INTO user(username, password) VALUES('%s', '%s')", esc_name.c_str(), esc_pwd.c_str());
+            if (mysql_query(conn, insert_sql) == 0) {
+                verify_result = true;
+            } else {
+                LOG_ERROR("MySQL insert error!");
+            }
+        }
+    } else {
+        if (user_exists && row[1] != nullptr && pwd == row[1]) {
+            verify_result = true;
         }
     }
 
-    sql_conn_pool::get_instance()->release_conn(conn);
+    mysql_free_result(res);
     LOG_INFO("User verify result: %s", verify_result ? "success" : "failure");
     return verify_result;
 }

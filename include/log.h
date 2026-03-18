@@ -47,14 +47,7 @@ private:
     inline static std::atomic<bool> enabled{true};
 };
 
-#ifndef OPEN_LOGGING
-#define LOG_INFO(fmt, ...) do { if (Log::is_enabled()) Log::instance().logf(Log::Level::Info, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_WARN(fmt, ...) do { if (Log::is_enabled()) Log::instance().logf(Log::Level::Warn, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_ERROR(fmt, ...) do { if (Log::is_enabled()) Log::instance().logf(Log::Level::Error, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_DEBUG(fmt, ...) do { if (Log::is_enabled()) Log::instance().logf(Log::Level::Debug, fmt, ##__VA_ARGS__); } while(0)
-#else
-#define LOG_INFO(fmt, ...) do {} while(0)
-#define LOG_WARN(fmt, ...) do {} while(0)
-#define LOG_ERROR(fmt, ...) do {} while(0)
-#define LOG_DEBUG(fmt, ...) do {} while(0)
-#endif
+#define LOG_INFO(fmt, ...) if (Log::is_enabled()) Log::instance().logf(Log::Level::Info, fmt, ##__VA_ARGS__);
+#define LOG_WARN(fmt, ...) if (Log::is_enabled()) Log::instance().logf(Log::Level::Warn, fmt, ##__VA_ARGS__);
+#define LOG_ERROR(fmt, ...) if (Log::is_enabled()) Log::instance().logf(Log::Level::Error, fmt, ##__VA_ARGS__);
+#define LOG_DEBUG(fmt, ...) if (Log::is_enabled()) Log::instance().logf(Log::Level::Debug, fmt, ##__VA_ARGS__);

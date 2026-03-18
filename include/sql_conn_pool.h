@@ -18,7 +18,8 @@ public:
     void release_conn(MYSQL* conn);
 
 private:
-    int conn_size;
+    int conn_size{0};
+    bool is_initialized{false};
     sql_conn_pool* instance;
     std::queue<MYSQL*> conn_queue;
     std::mutex sql_mutex;

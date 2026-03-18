@@ -13,6 +13,7 @@
 #include "http_conn.h"
 #include "epoller.h"
 #include "heap_timer.h"
+#include "sql_conn_RAII.h"
 
 class webserver {
 public:
