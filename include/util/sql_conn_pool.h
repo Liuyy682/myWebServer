@@ -5,7 +5,7 @@
 #include <condition_variable>
 #include <mysql/mysql.h>
 #include <thread>
-#include "log.h"
+#include "log/log.h"
 
 class sql_conn_pool {
 public:

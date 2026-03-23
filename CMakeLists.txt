@@ -11,19 +11,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # 包含头文件目录
-include_directories(include)
+include_directories(
+    include
+)
 
 # 指定源文件
 set(SOURCE_FILES
-    src/log.cpp
-    src/webserver.cpp
-    src/epoller.cpp
-    src/http_conn.cpp
-    src/httprequest.cpp
-    src/httpresponse.cpp
-    src/buffer.cpp
-    src/heap_timer.cpp
-    src/sql_conn_pool.cpp
+    src/log/log.cpp
+    src/server/webserver.cpp
+    src/epoller/epoller.cpp
+    src/http/http_conn.cpp
+    src/http/httprequest.cpp
+    src/http/httpresponse.cpp
+    src/buffer/buffer.cpp
+    src/timer/heap_timer.cpp
+    src/util/sql_conn_pool.cpp
     main.cpp
 )
 

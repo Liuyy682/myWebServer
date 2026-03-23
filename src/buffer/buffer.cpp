@@ -1,4 +1,4 @@
-#include "buffer.h"
+#include "buffer/buffer.h"
 
  //用指定大小初始化缓冲区
 buffer::buffer(int buffer_size) : buffer_(buffer_size) {

@@ -8,16 +8,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include "log.h"
-#include "threadpool.h"
-#include "http_conn.h"
-#include "epoller.h"
-#include "heap_timer.h"
-#include "sql_conn_RAII.h"
+#include "log/log.h"
+#include "util/threadpool.h"
+#include "http/http_conn.h"
+#include "epoller/epoller.h"
+#include "timer/heap_timer.h"
+#include "util/sql_conn_RAII.h"
 
 class webserver {
 public:
-    webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode, int is_log_write);
+    webserver(int port,
+              bool open_linger,
+              size_t core_poolsize,
+              size_t max_task_queue,
+              int trig_mode,
+              int is_log_write,
+              const std::string& db_host,
+              int db_port,
+              const std::string& db_user,
+              const std::string& db_password,
+              const std::string& db_name,
+              int db_conn_size);
     ~webserver();
 
     void init_socket();
@@ -34,6 +45,15 @@ private:
     int set_nonblock(int fd);
     void extent_time(http_conn* client);
     void init_event_mode(int trig_mode);
+    char* resolve_src_dir();
+    void init_db_pool(const std::string& db_host,
+                      int db_port,
+                      const std::string& db_user,
+                      const std::string& db_password,
+                      const std::string& db_name,
+                      int db_conn_size);
+    void respond_service_unavailable_and_close(http_conn* client);
+    void log_overload_metrics(const char* stage);
 
     int port;
     

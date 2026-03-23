@@ -1,4 +1,4 @@
-#include "log.h"
+#include "log/log.h"
 
 #ifndef PROJECT_ROOT_DIR
 #define PROJECT_ROOT_DIR "."

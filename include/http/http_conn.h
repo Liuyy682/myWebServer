@@ -3,10 +3,10 @@
 #include <netinet/in.h>
 #include <cassert>
 #include <cerrno>
-#include "buffer.h"
-#include "httprequest.h"
-#include "httpresponse.h"
-#include "log.h"
+#include "buffer/buffer.h"
+#include "http/httprequest.h"
+#include "http/httpresponse.h"
+#include "log/log.h"
 
 class http_conn {
 public:

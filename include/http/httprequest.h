@@ -7,9 +7,9 @@
 #include <errno.h>
 #include <cstdlib>
 #include <mysql/mysql.h>
-#include "buffer.h"
-#include "log.h"
-#include "sql_conn_RAII.h"
+#include "buffer/buffer.h"
+#include "log/log.h"
+#include "util/sql_conn_RAII.h"
 
 class http_request {
 public:

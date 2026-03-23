@@ -1,15 +1,68 @@
-#include "webserver.h"
+#include "server/webserver.h"
 
-webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_mode, int is_log_write)
-        : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode), is_log_write(is_log_write),
-      pool(std::make_unique<threadpool>(core_poolsize)), epollers(std::make_unique<epoller>()),
-      timer(std::make_unique<heap_timer>()) {
+namespace {
+constexpr const char kServiceUnavailableResponse[] =
+    "HTTP/1.1 503 Service Unavailable\r\n"
+    "Connection: close\r\n"
+    "Content-Type: text/plain\r\n"
+    "Content-Length: 19\r\n"
+    "Retry-After: 1\r\n"
+    "\r\n"
+    "Service Unavailable";
+}
+
+webserver::webserver(int port, bool open_linger, size_t core_poolsize, size_t max_task_queue, int trig_mode,
+                    int is_log_write, const std::string& db_host, int db_port,
+                    const std::string& db_user, const std::string& db_password,
+                    const std::string& db_name, int db_conn_size)
+        : port(port), open_linger(open_linger), is_close(false), trig_mode(trig_mode), 
+    is_log_write(is_log_write), pool(std::make_unique<threadpool>(core_poolsize, max_task_queue)), 
+        epollers(std::make_unique<epoller>()), timer(std::make_unique<heap_timer>()) {
+    
     Log::set_enabled(is_log_write != 0);
-
-    src_dir = getcwd(nullptr, 256);
+    src_dir = resolve_src_dir();
     assert(src_dir);
 
-    std::string cwd(src_dir);
+    http_conn::src_dir = src_dir;
+    http_conn::user_count.store(0);
+
+    init_db_pool(db_host, db_port, db_user, db_password, db_name, db_conn_size);
+
+    init_event_mode(trig_mode);
+    init_socket();
+}
+
+void webserver::init_db_pool(const std::string& db_host,
+                             int db_port,
+                             const std::string& db_user,
+                             const std::string& db_password,
+                             const std::string& db_name,
+                             int db_conn_size) {
+    if (db_host.empty() || db_user.empty() || db_password.empty() || db_name.empty()) {
+        LOG_WARN("MySQL config is incomplete, auth will return error page");
+        return;
+    }
+
+    int valid_db_port = db_port > 0 ? db_port : 3306;
+    int valid_db_conn_size = db_conn_size > 0 ? db_conn_size : 10;
+    sql_conn_pool::get_instance()->init(db_host.c_str(),
+                                        valid_db_port,
+                                        db_user.c_str(),
+                                        db_password.c_str(),
+                                        db_name.c_str(),
+                                        valid_db_conn_size);
+    LOG_INFO("MySQL pool initialized");
+}
+
+char* webserver::resolve_src_dir() {
+    char* cwd_buf = getcwd(nullptr, 256);
+    if (!cwd_buf) {
+        return nullptr;
+    }
+
+    std::string cwd(cwd_buf);
+    free(cwd_buf);
+
     std::string resource_path = cwd + "/resources/";
     if (access(resource_path.c_str(), F_OK) != 0) {
         std::string parent_resource_path = cwd + "/../resources/";
@@ -22,42 +75,18 @@ webserver::webserver(int port, bool open_linger, size_t core_poolsize, int trig_
     if (resolved_path) {
         resource_path = resolved_path;
         free(resolved_path);
-        if (resource_path.empty() || resource_path.back() != '/') {
-            resource_path.push_back('/');
-        }
     }
 
-    free(src_dir);
-    src_dir = static_cast<char*>(malloc(resource_path.size() + 1));
-    assert(src_dir);
-    memcpy(src_dir, resource_path.c_str(), resource_path.size() + 1);
-
-    http_conn::src_dir = src_dir;
-    http_conn::user_count.store(0);
-
-    const char* db_host = "localhost";
-    const char* db_user = "root";
-    const char* db_password = "root";
-    const char* db_name = "webserver";
-    const char* db_port_env = "1234";
-    const char* db_conn_size_env = "10";
-    if (db_host && db_user && db_password && db_name) {
-        int db_port = db_port_env ? std::atoi(db_port_env) : 3306;
-        int db_conn_size = db_conn_size_env ? std::atoi(db_conn_size_env) : 10;
-        if (db_port <= 0) {
-            db_port = 3306;
-        }
-        if (db_conn_size <= 0) {
-            db_conn_size = 10;
-        }
-        sql_conn_pool::get_instance()->init(db_host, db_port, db_user, db_password, db_name, db_conn_size);
-        LOG_INFO("MySQL pool initialized");
-    } else {
-        LOG_WARN("MySQL env not fully configured (need DB_HOST/DB_USER/DB_PASSWORD/DB_NAME), auth will return error page");
+    if (resource_path.empty() || resource_path.back() != '/') {
+        resource_path.push_back('/');
     }
 
-    init_event_mode(trig_mode);
-    init_socket();
+    char* result = static_cast<char*>(malloc(resource_path.size() + 1));
+    if (!result) {
+        return nullptr;
+    }
+    memcpy(result, resource_path.c_str(), resource_path.size() + 1);
+    return result;
 }
 
 webserver::~webserver() {
@@ -81,6 +110,7 @@ void webserver::init_socket() {
         linger.l_linger = 1;
         linger.l_onoff = 1;
     }
+    setsockopt(listen_fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 
     int flag = 1;
     setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
@@ -118,7 +148,7 @@ void webserver::init_event_mode(int trig_mode) {
 
 void webserver::start() {
     int time_ms = -1;
-    epollers->add_fd(listen_fd, EPOLLIN | EPOLLET);
+    epollers->add_fd(listen_fd, EPOLLIN | listen_event);
     while (!is_close) {
         if (timeout_ms > 0) {
                 time_ms = timer->get_next_tick();
@@ -191,12 +221,55 @@ void webserver::deal_client() {
 
 void webserver::deal_read(http_conn* client) {
     extent_time(client);
-    pool->submit(std::bind(&webserver::on_read, this, client));
+    if (!pool->submit(std::bind(&webserver::on_read, this, client))) {
+        log_overload_metrics("read");
+        respond_service_unavailable_and_close(client);
+    }
 }
 
 void webserver::deal_write(http_conn* client) {
     extent_time(client);
-    pool->submit(std::bind(&webserver::on_write, this, client));
+    if (!pool->submit(std::bind(&webserver::on_write, this, client))) {
+        log_overload_metrics("write");
+        respond_service_unavailable_and_close(client);
+    }
+}
+
+void webserver::respond_service_unavailable_and_close(http_conn* client) {
+    if (client == nullptr) {
+        return;
+    }
+    int fd = client->get_fd();
+    if (fd >= 0) {
+        ssize_t ret = send(fd,
+                           kServiceUnavailableResponse,
+                           sizeof(kServiceUnavailableResponse) - 1,
+                           MSG_NOSIGNAL);
+        (void)ret;
+    }
+    if (fd >= 0) {
+        close_conn(client);
+    }
+}
+
+void webserver::log_overload_metrics(const char* stage) {
+    size_t pending = pool->pending_tasks();
+    size_t limit = pool->task_queue_limit();
+    if (pool->is_stopping()) {
+        LOG_WARN("Threadpool rejected %s task while stopping, pending=%zu, limit=%zu",
+                 stage,
+                 pending,
+                 limit);
+        return;
+    }
+    if (limit > 0) {
+        LOG_WARN("Threadpool queue full, reject %s task, pending=%zu, limit=%zu",
+                 stage,
+                 pending,
+                 limit);
+    } else {
+        LOG_WARN("Threadpool rejected %s task, queue is unbounded, pending=%zu", stage, pending);
+    }
 }
 
 void webserver::close_conn(http_conn* client) {

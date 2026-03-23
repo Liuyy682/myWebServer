@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sql_conn_pool.h"
+#include "util/sql_conn_pool.h"
 
 class sql_conn_RAII {
 public:

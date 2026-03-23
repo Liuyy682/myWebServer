@@ -1,13 +1,12 @@
-#include "heap_timer.h"
+#include "timer/heap_timer.h"
 
 void heap_timer::sift_up(size_t i) {
     assert(i < heap.size());
-    size_t j = (i - 1) / 2;
-    while (j >= 0) {
+    while (i > 0) {
+        size_t j = (i - 1) / 2;
         if (heap[j] < heap[i]) break;
         swap_node(i, j);
         i = j;
-        j = (i - 1) / 2;
     }
 }
 
