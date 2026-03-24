@@ -9,23 +9,24 @@ find_package(Threads REQUIRED)
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # 包含头文件目录
 include_directories(
-    include
+    apps/web_server/include
 )
 
 # 指定源文件
 set(SOURCE_FILES
-    src/log/log.cpp
-    src/server/webserver.cpp
-    src/epoller/epoller.cpp
-    src/http/http_conn.cpp
-    src/http/httprequest.cpp
-    src/http/httpresponse.cpp
-    src/buffer/buffer.cpp
-    src/timer/heap_timer.cpp
-    src/util/sql_conn_pool.cpp
+    apps/web_server/src/log/log.cpp
+    apps/web_server/src/server/webserver.cpp
+    apps/web_server/src/epoller/epoller.cpp
+    apps/web_server/src/http/http_conn.cpp
+    apps/web_server/src/http/httprequest.cpp
+    apps/web_server/src/http/httpresponse.cpp
+    apps/web_server/src/buffer/buffer.cpp
+    apps/web_server/src/timer/heap_timer.cpp
+    apps/web_server/src/util/sql_conn_pool.cpp
     main.cpp
 )
 
